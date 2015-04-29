@@ -1,0 +1,193 @@
+package com.cmpe239.EmergencyVehicleManagement;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Pattern;
+
+import org.apache.commons.math3.stat.clustering.KMeansPlusPlusClusterer;
+import org.apache.spark.SparkConf;
+import org.apache.spark.mllib.clustering.StreamingKMeans;
+import org.apache.spark.mllib.linalg.Vectors;
+import org.apache.spark.mllib.regression.LabeledPoint;
+import org.apache.spark.api.java.JavaRDD;
+import org.apache.spark.api.java.function.FlatMapFunction;
+import org.apache.spark.api.java.function.Function2;
+import org.apache.spark.api.java.function.PairFunction;
+import org.apache.spark.storage.StorageLevel;
+import org.apache.spark.streaming.Duration;
+import org.apache.spark.streaming.api.java.JavaDStream;
+import org.apache.spark.streaming.api.java.JavaDStreamLike;
+import org.apache.spark.streaming.api.java.JavaPairDStream;
+import org.apache.spark.streaming.api.java.JavaStreamingContext;
+import org.apache.spark.streaming.dstream.DStream;
+import org.apache.spark.streaming.kinesis.KinesisUtils;
+import com.project11.bikeshare.util.TwilioMessage;
+import com.twilio.sdk.TwilioRestException;
+
+
+
+
+
+
+
+
+
+
+
+
+
+import scala.Tuple2;
+import scala.collection.immutable.Vector;
+
+import com.amazonaws.auth.AWSCredentials;
+import com.amazonaws.auth.AWSCredentialsProvider;
+import com.amazonaws.auth.BasicAWSCredentials;
+import com.amazonaws.auth.ClasspathPropertiesFileCredentialsProvider;
+import com.amazonaws.services.kinesis.AmazonKinesisClient;
+import com.amazonaws.services.kinesis.clientlibrary.lib.worker.InitialPositionInStream;
+import com.google.common.collect.Lists;
+import com.twilio.message.TwilioMessage;
+
+public class EmergencyVehicleManagement {
+	
+	private static final Pattern WORD_SEPARATOR = Pattern.compile(" ");
+    //private static final Logger logger = Logger.getLogger(JavaKinesisWordCountASL.class);
+	static DStream<org.apache.spark.mllib.linalg.Vector> parsedDaataA;
+	static DStream<org.apache.spark.mllib.linalg.Vector> parsedDaataV;
+	static String accessKey="AKIAJ7F5A6O3PHPTBZEQ";
+	static String secretKey="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";
+    /* Make the constructor private to enforce singleton */
+    private EmergencyVehicleManagement() {
+    }
+
+    @SuppressWarnings("null")
+	public static void main(String[] args) throws TwilioRestException, UnknownHostException{
+    	AWSCredentials credentials= new BasicAWSCredentials(accessKey, secretKey);
+    	AWSCredentialsProvider credentialsProvider = new ClasspathPropertiesFileCredentialsProvider();
+        /* Check that all required args were passed in. */
+        /*if (args.length < 2) {
+          System.err.println(
+              "Usage: JavaKinesisWordCountASL <stream-name> <endpoint-url>\n" +
+              "    <stream-name> is the name of the Kinesis stream\n" +
+              "    <endpoint-url> is the endpoint of the Kinesis service\n" +
+              "                   (e.g. https://kinesis.us-east-1.amazonaws.com)\n");
+          System.exit(1);
+        }*/
+
+        //StreamingExamples.setStreamingLogLevels();
+
+        /* Populate the appropriate variables from the given args */
+        String streamName = "cmpeharish";
+        String endpointUrl = "https://kinesis.us-east-1.amazonaws.com";
+        /* Set the batch interval to a fixed 60000 millis (1 minute) */
+        Duration batchInterval = new Duration(60000);
+        /*System.out.println(DateTimeFormat.forPattern("yyyyMMdd")
+        	    .getClass()
+        	    .getProtectionDomain()
+        	    .getCodeSource()
+        	    .getLocation());*/
+        /* Create a Kinesis client in order to determine the number of shards for the given stream */
+        AmazonKinesisClient kinesisClient = new AmazonKinesisClient(credentialsProvider);
+        kinesisClient.setEndpoint(endpointUrl);
+
+        /* Determine the number of shards from the stream */
+        int numShards = kinesisClient.describeStream(streamName)
+                .getStreamDescription().getShards().size();
+
+        /* In this example, we're going to create 1 Kinesis Worker/Receiver/DStream for each shard */ 
+        int numStreams = numShards;
+
+        /* Setup the Spark config. */
+        SparkConf sparkConfig = new SparkConf().setAppName("EmergencyVehicleManagement");
+
+        /* Kinesis checkpoint interval.  Same as batchInterval for this example. */
+        Duration checkpointInterval = batchInterval;
+
+        /* Setup the StreamingContext */
+        JavaStreamingContext jssc = new JavaStreamingContext(sparkConfig, batchInterval);
+        /* Create the same number of Kinesis DStreams/Receivers as Kinesis stream's shards */
+        List<JavaDStream<byte[]>> streamsList = new ArrayList<JavaDStream<byte[]>>(numStreams);
+        for (int i = 0; i < numStreams; i++) {
+          streamsList.add(
+        		  //KinesisUtils.c
+            KinesisUtils.createStream(jssc, streamName, endpointUrl, checkpointInterval, 
+            InitialPositionInStream.LATEST, StorageLevel.MEMORY_AND_DISK_2())
+          );
+        }
+       
+        /* Union all the streams if there is more than 1 stream */
+        JavaDStream<byte[]> unionStreams;
+        if (streamsList.size() > 1) {
+            unionStreams = jssc.union(streamsList.get(0), streamsList.subList(1, streamsList.size()));
+        } else {
+            /* Otherwise, just use the 1 stream */
+            unionStreams = streamsList.get(0);
+        }
+
+        
+        /*
+         * Split each line of the union'd DStreams
+         */
+        
+        JavaDStream<String> parsedDataV = unionStreams.flatMap(new FlatMapFunction<byte[], String>() {
+                public Iterable<String> call(byte[] line) {
+                	if(new String(line).contains("!ambulance"))
+                	{
+                		String arr[]=new String(line).split(",");
+                   		Map<List<Double>,String> m=new HashMap<List<Double>,String>();
+                   		List<Double> list=new ArrayList<Double>();
+                   		list.add(Double.parseDouble(arr[0]));
+                   		list.add(Double.parseDouble(arr[1]));
+                   		m.put(list, arr[3]);
+                   }
+                	return Lists.newArrayList(WORD_SEPARATOR.split(new String(line)));
+                }
+            });
+        	
+        JavaDStream<String> parsedDataA = unionStreams.flatMap(new FlatMapFunction<byte[], String>() {
+            public Iterable<String> call(byte[] line) {
+            	if(new String(line).contains("!ambulance"))
+            	{
+            		String arr[]=new String(line).split(",");
+               		Map<List<Double>,String> m=new HashMap<List<Double>,String>();
+               		List<Double> list=new ArrayList<Double>();
+               		list.add(Double.parseDouble(arr[0]));
+               		list.add(Double.parseDouble(arr[1]));
+               		m.put(list, arr[3]);
+            	}
+               		return Lists.newArrayList(WORD_SEPARATOR.split(new String(line)));
+            }
+        });
+        
+        StreamingKMeans model = new StreamingKMeans()
+        .setK(1) // number of clusters
+        .setDecayFactor(0.5) // decay factor for forgetfulness
+        .setRandomCenters(2, 0.0,1); // for creating random centers
+        
+        model.trainOn(parsedDaataA); // train the location obtained of ambulance
+        System.out.println("Location of ambulance is trained");
+        
+        DStream<Object> predictons =model.predictOn(parsedDaataV); // predict on the locations obtained from other vehicles
+        
+        
+        JavaDStream<String> predictions = parsedDataA;
+		/* Map each word to a (word, 1) tuple, then reduce/aggregate by word. */
+        predictions.mapToPair(
+            new PairFunction<String, String, Integer>() {
+                public Tuple2<String, Integer> call(String s) {
+                	new TwilioMessage().sendMessage(s);
+                    return new Tuple2<String, Integer>(s, 1);
+                }
+            });
+        
+                
+        /* Start the streaming context and await termination */
+        jssc.start();
+        System.out.println("in between");
+        jssc.awaitTermination();
+       
+    }
+
+}
