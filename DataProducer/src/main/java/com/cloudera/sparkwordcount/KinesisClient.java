@@ -15,8 +15,8 @@ import com.amazonaws.services.kinesis.model.PutRecordResult;
 
 public class KinesisClient {
 	
-	static String accessKey="AKIAJ7F5A6O3PHPTBZEQ";
-	static String secretKey="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";
+	static String accessKey="";
+	static String secretKey="";
 	
 	public static void main(String args[]) throws InterruptedException{
 		
