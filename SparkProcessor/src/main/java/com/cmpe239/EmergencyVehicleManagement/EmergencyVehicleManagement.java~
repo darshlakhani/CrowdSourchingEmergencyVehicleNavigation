@@ -56,8 +56,8 @@ public class EmergencyVehicleManagement {
     //private static final Logger logger = Logger.getLogger(JavaKinesisWordCountASL.class);
 	static DStream<org.apache.spark.mllib.linalg.Vector> parsedDaataA;
 	static DStream<org.apache.spark.mllib.linalg.Vector> parsedDaataV;
-	static String accessKey="AKIAJ7F5A6O3PHPTBZEQ";
-	static String secretKey="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";
+	static String accessKey="";
+	static String secretKey="";
     /* Make the constructor private to enforce singleton */
     private EmergencyVehicleManagement() {
     }
